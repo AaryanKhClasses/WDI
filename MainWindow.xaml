@@ -15,13 +15,13 @@
             Background="#181818"
         >
             <TextBlock
-                Text="WDI"
-                FontSize="14" FontWeight="Bold" Foreground="White" 
+                x:Name="IslandText" Text="WDI"
+                FontSize="14" FontWeight="Bold" Foreground="White"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 TextAlignment="Center" RenderTransformOrigin="0.5,0.5"
             >
                 <TextBlock.RenderTransform>
-                    <TranslateTransform Y="-7" />
+                    <TranslateTransform x:Name="IslandTextTransform" Y="-7" />
                 </TextBlock.RenderTransform>
             </TextBlock>
         </Border>

@@ -8,6 +8,11 @@ using WinRT.Interop;
 
 namespace WDI;
 
+public enum IslandState
+{
+    Hidden, Opening, Collapsed, Closing, Expanded
+}
+
 public sealed partial class MainWindow : Window
 {
     private readonly AppWindow _appWindow;
@@ -22,6 +27,22 @@ public sealed partial class MainWindow : Window
     private const int DWMWA_BORDER_COLOR = 34;
     private const int DWMNCRP_DISABLED = 1;
 
+    private const int IslandWidth = 300;
+    private const int IslandHeight = 50;
+    private const int IslandVisibleOffset = 0;
+    private const int OpenAnimationDurationMs = 250;
+    private const int CloseAnimationDurationMs = 200;
+    private DispatcherQueueTimer? _animationTimer;
+    private DateTime _animationStartTime;
+    private int _animationStartY;
+    private int _animationTargetY;
+    private int _animationDurationMs;
+    private IslandState _animationTargetState;
+    private int _animationStartWidth;
+    private int _animationStartHeight;
+    private int _animationTargetWidth;
+    private int _animationTargetHeight;
+
     private const int TriggerWidth = 300;
     private const int TriggerHeight = 8;
     private const int ActivationDelayMs = 150;
@@ -29,7 +50,7 @@ public sealed partial class MainWindow : Window
     private DispatcherQueueTimer? _mouseTimer;
     private DateTime? _triggerEnteredAt;
     private DateTime? _islandLeftAt;
-    private bool _islandVisible;
+    private IslandState _islandState = IslandState.Hidden;
     private bool _initialActivation = true;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -88,14 +109,12 @@ public sealed partial class MainWindow : Window
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
     {
         if (!_initialActivation) return;
-        _initialActivation = true;
+        _initialActivation = false;
         _appWindow.Hide();
     }
 
     private void ConfigureWindow(IntPtr hwnd)
     {
-        const int width = 300;
-        const int height = 50;
         const int radius = 25;
 
         var presenter = OverlappedPresenter.CreateForToolWindow();
@@ -107,12 +126,12 @@ public sealed partial class MainWindow : Window
         _appWindow.SetPresenter(presenter);
 
         ConfigureNativeWindow(hwnd);
-        _appWindow.Resize(new Windows.Graphics.SizeInt32 { Height = height, Width = width});
-        SetRoundedWindowRegion(hwnd, width, height, radius);
+        _appWindow.Resize(new Windows.Graphics.SizeInt32 { Height = IslandHeight, Width = IslandWidth});
+        SetRoundedWindowRegion(hwnd, IslandWidth, IslandHeight, radius);
 
         var displayArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary);
         var workArea = displayArea.WorkArea;
-        var x = workArea.X + (workArea.Width - width) / 2;
+        var x = workArea.X + (workArea.Width - IslandWidth) / 2;
         var y = workArea.Y;
         _appWindow.Move(new Windows.Graphics.PointInt32 { X = x, Y = y });
     }
@@ -151,7 +170,7 @@ public sealed partial class MainWindow : Window
     private void UpdateMouseState()
     {
         if (!GetCursorPos(out var cursor)) return;
-        if(!_islandVisible)
+        if (_islandState == IslandState.Hidden)
         {
             UpdateHiddenState(cursor);
             return;
@@ -169,7 +188,7 @@ public sealed partial class MainWindow : Window
         int triggerBottom = triggerTop + TriggerHeight;
 
         bool insideTrigger = cursor.X >= triggerLeft && cursor.X <= triggerRight && cursor.Y >= triggerTop && cursor.Y <= triggerBottom;
-        if(insideTrigger)
+        if (insideTrigger)
         {
             _triggerEnteredAt ??= DateTime.UtcNow;
             var elapsed = DateTime.UtcNow - _triggerEnteredAt.Value;
@@ -185,8 +204,10 @@ public sealed partial class MainWindow : Window
         if (insideIsland)
         {
             _islandLeftAt = null;
+            if (_islandState == IslandState.Closing) ReverseOpening();
             return;
         }
+        if (_islandState == IslandState.Opening) return;
         UpdateIslandExitState();
     }
 
@@ -199,18 +220,131 @@ public sealed partial class MainWindow : Window
 
     private void ShowIsland()
     {
-        if (_islandVisible) return;
+        if (_islandState == IslandState.Collapsed || _islandState == IslandState.Opening) return;
         _triggerEnteredAt = null;
         _islandLeftAt = null;
-        _islandVisible = true;
+
+        int hiddenY = GetHiddenY();
+        int visibleY = GetVisibleY();
+        _appWindow.Move(new Windows.Graphics.PointInt32 { X = GetIslandX(), Y = hiddenY });
+        _islandState = IslandState.Opening;
         _appWindow.Show();
+        StartAnimation(hiddenY, visibleY, OpenAnimationDurationMs, IslandState.Collapsed);
     }
 
     private void HideIsland()
     {
-        if (!_islandVisible) return;
-        _islandVisible = false;
+        if (_islandState == IslandState.Hidden || _islandState == IslandState.Closing) return;
         _islandLeftAt = null;
-        _appWindow.Hide();
+
+        int currentY = GetCurrentWindowY();
+        int hiddenY = GetHiddenY();
+        _islandState = IslandState.Closing;
+        StartAnimation(currentY, hiddenY, CloseAnimationDurationMs, IslandState.Hidden);
     }
+
+    private void ReverseOpening()
+    {
+        int currentY = GetCurrentWindowY();
+        _islandState = IslandState.Opening;
+        StartAnimation(currentY, GetVisibleY(), OpenAnimationDurationMs, IslandState.Collapsed);
+    }
+
+    private static double EaseOutCubic(double t)
+    {
+        return 1 - Math.Pow(1 - t, 3);
+    }
+
+    private void StartAnimation(
+        int startY, int targetY, int durationMs, IslandState targetState,
+        int startWidth = IslandWidth, int targetWidth = IslandWidth,
+        int startHeight = IslandHeight, int targetHeight = IslandHeight
+    )
+    {
+        _animationStartTime = DateTime.UtcNow;
+        _animationStartY = startY;
+        _animationDurationMs = durationMs;
+        _animationTargetY = targetY;
+        _animationTargetState = targetState;
+        _animationStartWidth = startWidth;
+        _animationStartHeight = startHeight;
+        _animationTargetWidth = targetWidth;
+        _animationTargetHeight = targetHeight;
+
+        _animationTimer ??= DispatcherQueue.CreateTimer();
+        _animationTimer.Interval = TimeSpan.FromMilliseconds(16);
+        _animationTimer.Tick -= AnimationTick;
+        _animationTimer.Tick += AnimationTick;
+        if (!_animationTimer.IsRunning) _animationTimer.Start();
+    }
+
+    private void AnimationTick(DispatcherQueueTimer sender, object args)
+    {
+        var elapsed = DateTime.UtcNow - _animationStartTime;
+        double progress = elapsed.TotalMilliseconds / _animationDurationMs;
+        progress = Math.Clamp(progress, 0, 1);
+        double eased = EaseOutCubic(progress);
+
+        double contentProgress = Math.Clamp(progress * 1.4, 0, 1);
+        IslandText.Opacity = _animationTargetState == IslandState.Collapsed ? contentProgress : 1 - contentProgress;
+
+        double contentOffset = _animationTargetState == IslandState.Collapsed ? 6 * (1 - contentProgress) : 6 * contentProgress;
+        IslandTextTransform.Y = -7 + contentOffset;
+
+        int y = (int)Math.Round(_animationStartY + (_animationTargetY - _animationStartY) * eased);
+        int w = (int)Math.Round(_animationStartWidth + (_animationTargetWidth - _animationStartWidth) * eased);
+        int h = (int)Math.Round(_animationStartHeight + (_animationTargetHeight - _animationStartHeight) * eased);
+        int x = GetCenteredX(w);
+
+        _appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = w, Height = h });
+        SetRoundedWindowRegion(_hwnd, w, h, h / 2);
+        _appWindow.Move(new Windows.Graphics.PointInt32 { X = x, Y = y });
+
+        if (progress >= 1.0)
+        {
+            _animationTimer?.Stop();
+            _appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = _animationTargetWidth, Height = _animationTargetHeight });
+            SetRoundedWindowRegion(_hwnd, _animationTargetWidth, _animationTargetHeight, _animationTargetHeight / 2);
+            _appWindow.Move(new Windows.Graphics.PointInt32 { X = GetCenteredX(_animationTargetWidth), Y = _animationTargetY });
+            _islandState = _animationTargetState;
+            if (_islandState == IslandState.Hidden) _appWindow.Hide();
+        }
+    }
+
+    private int GetIslandX()
+    {
+        var displayArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary);
+        var workArea = displayArea.WorkArea;
+        return workArea.X + (workArea.Width - IslandWidth) / 2;
+    }
+
+    private int GetCenteredX(int width)
+    {
+        var displayArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary);
+        var workArea = displayArea.WorkArea;
+        return workArea.X + (workArea.Width - width) / 2;
+    }
+
+    private int GetHiddenY()
+    {
+        var displayArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary);
+        var workArea = displayArea.WorkArea;
+        return workArea.Y - IslandHeight;
+    }
+
+    private int GetVisibleY()
+    {
+        var displayArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary);
+        var workArea = displayArea.WorkArea;
+        return workArea.Y + IslandVisibleOffset;
+    }
+
+    public int GetCurrentWindowY()
+    {
+        if (!GetWindowRect(_hwnd, out var rect)) return GetVisibleY();
+        return rect.Top;
+    }
+
+    private void ShowContent() => IslandText.Opacity = 1;
+    private void HideContent() => IslandText.Opacity = 0;
 }
