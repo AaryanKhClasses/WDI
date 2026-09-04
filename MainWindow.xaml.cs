@@ -2,21 +2,26 @@ using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Input;
 using System;
 using System.Runtime.InteropServices;
+using WDI.Widgets;
 using WinRT.Interop;
 
 namespace WDI;
 
 public enum IslandState
 {
-    Hidden, Opening, Collapsed, Closing, Expanded
+    Hidden, Opening, Collapsed, Collapsing, Closing, Expanded, Expanding
 }
 
 public sealed partial class MainWindow : Window
 {
     private readonly AppWindow _appWindow;
     private readonly IntPtr _hwnd;
+
+    private readonly ClockService _clockService = new();
+    private DispatcherQueueTimer? _clockTimer;
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_LAYERED = 0x00080000;
@@ -29,9 +34,13 @@ public sealed partial class MainWindow : Window
 
     private const int IslandWidth = 300;
     private const int IslandHeight = 50;
+    private const int ExpandedWidth = 520;
+    private const int ExpandedHeight = 250;
     private const int IslandVisibleOffset = 0;
     private const int OpenAnimationDurationMs = 250;
     private const int CloseAnimationDurationMs = 200;
+    private const int ExpandAnimationDurationMs = 300;
+    private const int CollapseAnimationDurationMs = 250;
     private DispatcherQueueTimer? _animationTimer;
     private DateTime _animationStartTime;
     private int _animationStartY;
@@ -97,20 +106,62 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Activated += OnWindowActivated;
+        IslandBackground.PointerPressed += IslandBackground_PointerPressed;
 
         _hwnd = WindowNative.GetWindowHandle(this);
         var windowID = Win32Interop.GetWindowIdFromWindow(_hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowID);
 
         ConfigureWindow(_hwnd);
+        StartClock();
         StartMouseTracking();
+    }
+
+    private void IslandBackground_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_islandState == IslandState.Collapsed) ExpandIsland();
+        if (_islandState == IslandState.Expanded) CollapseIsland();
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
     {
         if (!_initialActivation) return;
         _initialActivation = false;
+        IslandBackground.Width = IslandWidth;
+        IslandBackground.Height = IslandHeight;
         _appWindow.Hide();
+    }
+
+    private void StartClock()
+    {
+        UpdateClock();
+        ScheduleNextClockUpdate();
+    }
+
+    private void ScheduleNextClockUpdate()
+    {
+        var now = _clockService.GetCurrentTime();
+        var nextMinute = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0).AddMinutes(1);
+        var delay = nextMinute - now;
+
+        _clockTimer ??= DispatcherQueue.CreateTimer();
+        _clockTimer.Stop();
+        _clockTimer.Interval = delay;
+        _clockTimer.Tick -= ClockTimerTick;
+        _clockTimer.Tick += ClockTimerTick;
+        _clockTimer.Start();
+    }
+
+    private void ClockTimerTick(DispatcherQueueTimer sender, object args)
+    {
+        UpdateClock();
+        ScheduleNextClockUpdate();
+    }
+
+    private void UpdateClock()
+    {
+        var now = _clockService.GetCurrentTime();
+        IslandText.Text = now.ToString("HH:mm");
     }
 
     private void ConfigureWindow(IntPtr hwnd)
@@ -207,7 +258,7 @@ public sealed partial class MainWindow : Window
             if (_islandState == IslandState.Closing) ReverseOpening();
             return;
         }
-        if (_islandState == IslandState.Opening) return;
+        if (_islandState == IslandState.Opening || _islandState == IslandState.Expanding || _islandState == IslandState.Collapsing || _islandState == IslandState.Expanded) return;
         UpdateIslandExitState();
     }
 
@@ -248,6 +299,29 @@ public sealed partial class MainWindow : Window
         int currentY = GetCurrentWindowY();
         _islandState = IslandState.Opening;
         StartAnimation(currentY, GetVisibleY(), OpenAnimationDurationMs, IslandState.Collapsed);
+    }
+
+    private void ExpandIsland()
+    {
+        if (_islandState != IslandState.Collapsed) return;
+        _islandLeftAt = null;
+
+        IslandBackground.Width = ExpandedWidth;
+        IslandBackground.Height = ExpandedHeight;
+
+        int currentY = GetCurrentWindowY();
+        _islandState = IslandState.Expanding;
+        ExpandedContent.Visibility = Visibility.Visible;
+        StartAnimation(currentY, currentY, ExpandAnimationDurationMs, IslandState.Expanded, IslandWidth, ExpandedWidth, IslandHeight, ExpandedHeight);
+    }
+
+    private void CollapseIsland()
+    {
+        if (_islandState != IslandState.Expanded) return;
+        _islandState = IslandState.Collapsing;
+        IslandBackground.Width = IslandWidth;
+        IslandBackground.Height = IslandHeight;
+        StartAnimation(GetCurrentWindowY(), GetVisibleY(), CollapseAnimationDurationMs, IslandState.Collapsed, ExpandedWidth, IslandWidth, ExpandedHeight, IslandHeight);
     }
 
     private static double EaseOutCubic(double t)
@@ -307,6 +381,7 @@ public sealed partial class MainWindow : Window
             SetRoundedWindowRegion(_hwnd, _animationTargetWidth, _animationTargetHeight, _animationTargetHeight / 2);
             _appWindow.Move(new Windows.Graphics.PointInt32 { X = GetCenteredX(_animationTargetWidth), Y = _animationTargetY });
             _islandState = _animationTargetState;
+            if (_islandState == IslandState.Collapsed) ExpandedContent.Visibility = Visibility.Collapsed;
             if (_islandState == IslandState.Hidden) _appWindow.Hide();
         }
     }
