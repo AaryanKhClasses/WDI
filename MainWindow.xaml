@@ -6,12 +6,13 @@
     xmlns:local="using:WDI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:widgets="using:WDI.Widgets.Clock"
     mc:Ignorable="d">
 
     <Grid>
         <Border
             x:Name="IslandBackground" Background="#181818"
-            HorizontalAlignment="Center" VerticalAlignment="Top"
+            HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
         >
             <Grid>
                 <Grid
@@ -23,20 +24,13 @@
                         FontSize="14" FontWeight="Bold" Foreground="White"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         TextAlignment="Center" RenderTransformOrigin="0.5,0.5"
-                    >
-                        <TextBlock.RenderTransform>
-                            <TranslateTransform x:Name="IslandTextTransform" Y="-7" />
-                        </TextBlock.RenderTransform>
-                    </TextBlock>
+                    />
                 </Grid>
                 <Grid
                     x:Name="ExpandedContent" Visibility="Collapsed"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 >
-                    <TextBlock 
-                        Text="Expanded Clock"
-                        Foreground="White" FontSize="24"
-                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                    />
+                    <widgets:ExpandedClockView x:Name="ExpandedClockView" />
                 </Grid>
             </Grid>
         </Border>

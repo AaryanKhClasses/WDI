@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace WDI.Widgets;
+namespace WDI.Widgets.Clock;
 
 public sealed class ClockService
 {
