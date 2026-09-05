@@ -5,7 +5,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using System;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using WDI.Widgets.Clock;
+using WDI.Widgets.Media;
 using WinRT.Interop;
 
 namespace WDI;
@@ -21,6 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly IntPtr _hwnd;
 
     private readonly ClockService _clockService = new();
+    private readonly MediaService _mediaService = new();
     private DispatcherQueueTimer? _clockTimer;
 
     private const int GWL_EXSTYLE = -20;
@@ -37,6 +40,8 @@ public sealed partial class MainWindow : Window
     private const int IslandHeight = 50;
     private const int ExpandedWidth = 520;
     private const int ExpandedHeight = 250;
+    private const int MediaIslandWidth = 400;
+    private const int MediaIslandHeight = 75;
     private const int IslandVisibleOffset = 0;
     private const int OpenAnimationDurationMs = 250;
     private const int CloseAnimationDurationMs = 200;
@@ -110,6 +115,13 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        CompactMediaView.Initialize(_mediaService);
+
+        // debug
+        CompactMediaView.Visibility = Visibility.Visible;
+        IslandText.Visibility = Visibility.Collapsed;
+        // debug
+
         Activated += OnWindowActivated;
         IslandBackground.PointerPressed += IslandBackground_PointerPressed;
 
@@ -117,8 +129,14 @@ public sealed partial class MainWindow : Window
         var windowID = Win32Interop.GetWindowIdFromWindow(_hwnd);
         _appWindow = AppWindow.GetFromWindowId(windowID);
 
+        // debug
+        _appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = MediaIslandWidth, Height = MediaIslandHeight });
+        SetRoundedWindowRegion(_hwnd, MediaIslandWidth, MediaIslandHeight, GetCornerRadius(MediaIslandWidth, MediaIslandHeight));
+        // debug
+
         ConfigureWindow(_hwnd);
         StartClock();
+        _ = InitializeMediaAsync();
         StartInputTracking();
     }
 
@@ -168,6 +186,13 @@ public sealed partial class MainWindow : Window
         ExpandedClockView.Update();
     }
 
+    private async Task InitializeMediaAsync()
+    {
+        await _mediaService.InitializeAsync();
+        var mediaInfo = await _mediaService.GetCurrentMediaInfoAsync();
+        CompactMediaView.Update(mediaInfo);
+    }
+
     private void ConfigureWindow(IntPtr hwnd)
     {
         const int radius = 25;
@@ -181,8 +206,8 @@ public sealed partial class MainWindow : Window
         _appWindow.SetPresenter(presenter);
 
         ConfigureNativeWindow(hwnd);
-        _appWindow.Resize(new Windows.Graphics.SizeInt32 { Height = IslandHeight, Width = IslandWidth});
-        SetRoundedWindowRegion(hwnd, IslandWidth, IslandHeight, radius);
+        //_appWindow.Resize(new Windows.Graphics.SizeInt32 { Height = IslandHeight, Width = IslandWidth});
+        //SetRoundedWindowRegion(hwnd, IslandWidth, IslandHeight, radius);
 
         var displayArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary);
         var workArea = displayArea.WorkArea;
@@ -384,15 +409,15 @@ public sealed partial class MainWindow : Window
         int h = (int)Math.Round(_animationStartHeight + (_animationTargetHeight - _animationStartHeight) * eased);
         int x = GetCenteredX(w);
 
-        _appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = w, Height = h });
-        SetRoundedWindowRegion(_hwnd, w, h, GetCornerRadius(w, h));
+        //_appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = w, Height = h });
+        //SetRoundedWindowRegion(_hwnd, w, h, GetCornerRadius(w, h));
         _appWindow.Move(new Windows.Graphics.PointInt32 { X = x, Y = y });
 
         if (progress >= 1.0)
         {
             _animationTimer?.Stop();
-            _appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = _animationTargetWidth, Height = _animationTargetHeight });
-            SetRoundedWindowRegion(_hwnd, _animationTargetWidth, _animationTargetHeight, GetCornerRadius(_animationTargetWidth, _animationTargetHeight));
+            //_appWindow.Resize(new Windows.Graphics.SizeInt32 { Width = _animationTargetWidth, Height = _animationTargetHeight });
+            //SetRoundedWindowRegion(_hwnd, _animationTargetWidth, _animationTargetHeight, GetCornerRadius(_animationTargetWidth, _animationTargetHeight));
             _appWindow.Move(new Windows.Graphics.PointInt32 { X = GetCenteredX(_animationTargetWidth), Y = _animationTargetY });
             _islandState = _animationTargetState;
             if (_islandState == IslandState.Expanded) ExpandedContent.Visibility = Visibility.Visible;

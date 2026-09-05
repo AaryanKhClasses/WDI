@@ -6,7 +6,8 @@
     xmlns:local="using:WDI"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:widgets="using:WDI.Widgets.Clock"
+    xmlns:widgetc="using:WDI.Widgets.Clock"
+    xmlns:widgetm="using:WDI.Widgets.Media"
     mc:Ignorable="d">
 
     <Grid>
@@ -25,12 +26,16 @@
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         TextAlignment="Center" RenderTransformOrigin="0.5,0.5"
                     />
+                    <widgetm:CompactMediaView
+                        x:Name="CompactMediaView" Visibility="Collapsed"
+                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    />
                 </Grid>
                 <Grid
                     x:Name="ExpandedContent" Visibility="Collapsed"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 >
-                    <widgets:ExpandedClockView x:Name="ExpandedClockView" />
+                    <widgetc:ExpandedClockView x:Name="ExpandedClockView" />
                 </Grid>
             </Grid>
         </Border>

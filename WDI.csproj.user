@@ -11,6 +11,9 @@
     <None Update="Package.appxmanifest">
       <SubType>Designer</SubType>
     </None>
+    <Page Update="Widgets\Media\CompactMediaView.xaml">
+      <SubType>Designer</SubType>
+    </Page>
     <Page Update="Widgets\Clock\ExpandedClockView.xaml">
       <SubType>Designer</SubType>
     </Page>
